@@ -15,7 +15,7 @@ st.set_page_config(
 
 st.title("🚜 MOCO - Mining Operational Control Room")
 st.markdown("""
-**Single-Site Audit Session:** Unggah 2 file ERP harian (*Summary Productivity* & *Input Time*) untuk audit otomatis integritas jam kerja unit (MOHH, HM/EWH) dan latensi pengetikan dispatcher.
+**Single-Site Audit Session:** Unggah 2 file ERP harian (*Summary Productivity* & *Input Time*) untuk audit otomatis integritas Unit No, jam kerja unit (MOHH, HM/EWH), dan latensi pengetikan dispatcher.
 """)
 
 # -----------------------------------------------------------------------------
@@ -23,32 +23,33 @@ st.markdown("""
 # -----------------------------------------------------------------------------
 def load_summary_productivity(file):
     """
-    Membaca & membersihkan file Summary Productivity.
-    Menggabungkan multi-header dan memfilter WORKGROUP hanya OB & COAL.
+    Membaca & membersihkan file Summary Productivity secara aman dari NaN/float.
+    Mendukung deteksi UNIT NO, WORKGROUP (OB & COAL), dan grup jam kerja (HM, EWH, STB, BD, MOHH).
     """
     try:
-        # Read raw excel without initial header to locate header rows
+        # 1. Read raw excel
         df_raw = pd.read_excel(file, header=None)
         
-        # Cari baris yang mengandung 'WORKGROUP' atau 'MODEL'
+        # 2. Cari baris header secara aman (mencari kata 'WORKGROUP' atau 'UNIT' atau 'MODEL')
         header_row_idx = None
         for idx, row in df_raw.head(15).iterrows():
-            row_str = row.astype(str).str.upper().tolist()
-            if any("WORKGROUP" in item for item in row_str):
+            row_vals = [str(x).upper() for x in row.values if pd.notna(x)]
+            if any("WORKGROUP" in item or "MODEL" in item for item in row_vals):
                 header_row_idx = idx
                 break
         
         if header_row_idx is None:
             header_row_idx = 1  # Fallback ke baris ke-2
             
-        # Re-read dengan header bertingkat
+        # 3. Read dengan header bertingkat
         df = pd.read_excel(file, header=[header_row_idx, header_row_idx + 1])
         
-        # Cleaning column names (flatten MultiIndex tuple)
+        # 4. Flatten MultiIndex columns secara aman
         flat_cols = []
         for col in df.columns:
-            l1 = str(col[0]).strip() if not str(col[0]).startswith("Unnamed") else ""
-            l2 = str(col[1]).strip() if not str(col[1]).startswith("Unnamed") else ""
+            l1 = str(col[0]).strip() if pd.notna(col[0]) and not str(col[0]).startswith("Unnamed") else ""
+            l2 = str(col[1]).strip() if pd.notna(col[1]) and not str(col[1]).startswith("Unnamed") else ""
+            
             if l1 and l2:
                 flat_cols.append(f"{l1}_{l2}".upper())
             elif l1:
@@ -56,24 +57,29 @@ def load_summary_productivity(file):
             elif l2:
                 flat_cols.append(l2.upper())
             else:
-                flat_cols.append("UNKNOWN")
+                flat_cols.append(f"COL_{len(flat_cols)}")
         
         df.columns = flat_cols
         
-        # Identifikasi Kolom WORKGROUP
-        wg_col = [c for c in df.columns if "WORKGROUP" in c]
-        if wg_col:
-            df = df.rename(columns={wg_col[0]: "WORKGROUP"})
+        # 5. Cari dan standardisasi nama kolom penting (WORKGROUP & UNIT NO)
+        wg_cols = [c for c in df.columns if "WORKGROUP" in c]
+        if wg_cols:
+            df = df.rename(columns={wg_cols[0]: "WORKGROUP"})
         else:
-            # Dropdown/Fallback pencarian kolom
-            df.columns.values[0] = "WORKGROUP"
-            
-        # Standardisasi data WORKGROUP
+            df.rename(columns={df.columns[0]: "WORKGROUP"}, inplace=True)
+
+        unit_cols = [c for c in df.columns if "UNIT" in c or "CN" in c or "NO" in c or "EQ" in c]
+        if unit_cols:
+            df = df.rename(columns={unit_cols[0]: "UNIT_NO"})
+
+        # Clean & Filter WORKGROUP (Hanya OB dan COAL)
         df['WORKGROUP'] = df['WORKGROUP'].astype(str).str.strip().str.upper()
-        
-        # FILTER KETAT: Hanya WORKGROUP 'OB' dan 'COAL'
         df_filtered = df[df['WORKGROUP'].isin(['OB', 'COAL'])].copy()
         
+        # Bersihkan string UNIT_NO jika ada
+        if "UNIT_NO" in df_filtered.columns:
+            df_filtered['UNIT_NO'] = df_filtered['UNIT_NO'].astype(str).str.strip()
+            
         return df_filtered, None
     except Exception as e:
         return None, str(e)
@@ -81,7 +87,6 @@ def load_summary_productivity(file):
 def load_input_time(file):
     """
     Membaca & membersihkan file Input Time (Time Entry).
-    Mengakses timestamp entri data & dispatcher/user.
     """
     try:
         df = pd.read_excel(file)
@@ -98,13 +103,13 @@ st.sidebar.header("📁 Upload Operational Files")
 file_summary = st.sidebar.file_uploader(
     "1. Summary Productivity (.xlsx)", 
     type=["xlsx", "xls"],
-    help="Upload file Summary Productivity yang memuat MOHH, HM, EWH, BD, STB, dan Workgroup."
+    help="Upload file Summary Productivity (memuat Unit No, MOHH, HM, EWH, BD, STB, dan Workgroup)."
 )
 
 file_input_time = st.sidebar.file_uploader(
     "2. Input Time / Time Entry (.xlsx)", 
     type=["xlsx", "xls"],
-    help="Upload file Time Entry yang memuat jam entri data dan nama User/Dispatcher."
+    help="Upload file Time Entry (memuat jam entri data dan nama User/Dispatcher)."
 )
 
 # -----------------------------------------------------------------------------
@@ -131,16 +136,16 @@ if file_summary is not None and file_input_time is not None:
         total_records = len(df_prod)
         total_ob = len(df_prod[df_prod['WORKGROUP'] == 'OB'])
         total_coal = len(df_prod[df_prod['WORKGROUP'] == 'COAL'])
-        total_time_entries = len(df_time)
+        total_units = df_prod['UNIT_NO'].nunique() if 'UNIT_NO' in df_prod.columns else total_records
         
         with col1:
-            st.metric("Total Records Filtered", f"{total_records:,} Units")
+            st.metric("Total Active Units", f"{total_units:,} Units")
         with col2:
             st.metric("OB Units", f"{total_ob:,}")
         with col3:
             st.metric("COAL Units", f"{total_coal:,}")
         with col4:
-            st.metric("Total Time Entries", f"{total_time_entries:,}")
+            st.metric("Total Records Filtered", f"{total_records:,}")
             
         st.markdown("---")
         
@@ -176,7 +181,7 @@ if file_summary is not None and file_input_time is not None:
         
         st.dataframe(df_time.head(100), use_container_width=True)
         
-        # Jika terdapat kolom USER / DISPATCHER di file Time Entry
+        # Identifikasi kolom User / Dispatcher di file Time Entry
         user_cols = [c for c in df_time.columns if "USER" in c or "DISPATCHER" in c or "CREATED" in c]
         if user_cols:
             user_col_name = user_cols[0]
@@ -197,15 +202,14 @@ if file_summary is not None and file_input_time is not None:
             st.plotly_chart(fig_user, use_container_width=True)
 
 else:
-    # State saat file belum diunggah
+    # State awal sebelum upload
     st.info("👋 **Selamat Datang di MOCO Dashboard!**")
     st.warning(" Silakan **unggah 2 file Excel harian** di sidebar sebelah kiri untuk mulai membaca data operasional site.")
     
     st.markdown("""
     ### 📋 Petunjuk Unggah File:
     1. **Summary Productivity (.xlsx):**
-       * File yang berisi *grup HM* (`HM D`, `HM N`, `HM TTL`, `EWH`, `STB`, `BD`, `MOHH`).
-       * Sistem akan memfilter material secara otomatis, **hanya mengambil `OB` dan `COAL`**.
+       * Menampilkan **Unit No**, **Workgroup** (`OB` dan `COAL`), serta jam operasional (`HM`, `EWH`, `STB`, `BD`, `MOHH`).
     2. **Input Time / Time Entry (.xlsx):**
-       * File log aktivitas input waktu dari Dispatcher/User.
+       * Menampilkan log aktivitas dan ketepatan waktu input dari Dispatcher/User.
     """)
