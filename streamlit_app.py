@@ -7,15 +7,15 @@ import plotly.graph_objects as go
 # 1. PAGE CONFIGURATION
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="MOCO - Control Room Mining Dashboard",
-    page_icon="🚜",
+    page_title="MOCO - Performance Control Room Dashboard",
+    page_icon="BNI",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-st.title("🚜 MOCO - Mining Operational Control Room")
+st.title("MOCO - Performance Control Room Dashboard")
 st.markdown("""
-**Single-Site Audit Session:** Unggah 2 file ERP harian (*Summary Productivity* & *Input Time*) untuk audit otomatis integritas Unit No, jam kerja unit (MOHH, HM/EWH), dan latensi pengetikan dispatcher.
+**Single-Site Audit Session:** Unggah 2 file ERP harian (*Summary Productivity* & *Input Time*) untuk audit otomatis integritas Unit No, jam kerja unit (MOHH, HM/EWH), dan latensi inputan dispatcher.
 """)
 
 # -----------------------------------------------------------------------------
@@ -101,13 +101,13 @@ def load_input_time(file):
 # -----------------------------------------------------------------------------
 st.sidebar.header("📁 Upload Operational Files")
 file_summary = st.sidebar.file_uploader(
-    "1. Summary Productivity (.xlsx)", 
+    "1. Summary Productivity", 
     type=["xlsx", "xls"],
     help="Upload file Summary Productivity (memuat Unit No, MOHH, HM, EWH, BD, STB, dan Workgroup)."
 )
 
 file_input_time = st.sidebar.file_uploader(
-    "2. Input Time / Time Entry (.xlsx)", 
+    "2. Input Time / Time Entry", 
     type=["xlsx", "xls"],
     help="Upload file Time Entry (memuat jam entri data dan nama User/Dispatcher)."
 )
@@ -203,7 +203,7 @@ if file_summary is not None and file_input_time is not None:
 
 else:
     # State awal sebelum upload
-    st.info("👋 **Selamat Datang di MOCO Dashboard!**")
+    st.info("👋 **BIMA MOCO Dashboard!**")
     st.warning(" Silakan **unggah 2 file Excel harian** di sidebar sebelah kiri untuk mulai membaca data operasional site.")
     
     st.markdown("""
