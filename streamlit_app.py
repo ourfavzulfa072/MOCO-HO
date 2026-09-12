@@ -69,6 +69,10 @@ def process_aturan_1_summary(file):
 
         df = df.rename(columns=col_map)
         
+        # Format kolom DATE agar tidak menampilkan jam
+        if "DATE" in df.columns:
+            df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
+
         # Filter Workgroup OB & COAL
         if "WORKGROUP" in df.columns:
             df["WORKGROUP_STR"] = df["WORKGROUP"].astype(str).str.strip().str.upper()
@@ -101,14 +105,14 @@ def process_aturan_1_summary(file):
 def process_aturan_2_input_time(file):
     """
     Aturan 2: Membaca Input Time (Time Entry)
-    - Menangani header bertingkat (Input Time & Time Breakdown di baris atas)
-    - Mencari kolom 'Dev (Hours text)' dengan akurat
-    - Menyaring data yang mengandung kata 'jam'
+    - Menangani header bertingkat
+    - Format kolom Date agar tanpa jam
+    - Menyaring data yang pada kolom Dev (Hours text) mengandung kata 'jam'
     """
     try:
         df_raw = pd.read_excel(file, header=None)
         
-        # 1. Cari baris mana yang mengandung 'DEV (HOURS TEXT)' atau 'INPUT'
+        # 1. Cari baris yang mengandung 'DEV (HOURS TEXT)' atau 'INPUT'
         sub_header_row = None
         for idx, row in df_raw.head(15).iterrows():
             row_str = [str(x).upper() for x in row.values if pd.notna(x)]
@@ -116,17 +120,25 @@ def process_aturan_2_input_time(file):
                 sub_header_row = idx
                 break
 
-        # Jika ditemukan baris sub-header khusus (baris ke-2 header)
         if sub_header_row is not None:
             df = pd.read_excel(file, header=sub_header_row)
         else:
-            # Fallback jika hanya ada 1 header biasa
             df = pd.read_excel(file)
 
         # Bersihkan nama kolom dari whitespace
         df.columns = [str(c).strip() for c in df.columns]
 
-        # 2. Cari kolom 'Dev (Hours text)' secara fleksibel
+        # 2. Format kolom Date agar bersih tanpa jam (00:00:00)
+        date_col = None
+        for c in df.columns:
+            if "DATE" in str(c).upper() or "TANGGAL" in str(c).upper():
+                date_col = c
+                break
+        
+        if date_col:
+            df[date_col] = pd.to_datetime(df[date_col], errors="coerce").dt.strftime("%Y-%m-%d")
+
+        # 3. Cari kolom 'Dev (Hours text)'
         dev_txt_col = None
         for c in df.columns:
             c_upper = str(c).upper()
@@ -134,18 +146,17 @@ def process_aturan_2_input_time(file):
                 dev_txt_col = c
                 break
 
-        # Fallback jika teks 'text' tidak ada tapi ada kata 'Dev' kedua
         if not dev_txt_col:
             dev_cols = [c for c in df.columns if "DEV" in str(c).upper()]
             if len(dev_cols) >= 2:
-                dev_txt_col = dev_cols[1]  # Biasanya kolom Dev ke-2 adalah text
+                dev_txt_col = dev_cols[1]
             elif len(dev_cols) == 1:
                 dev_txt_col = dev_cols[0]
 
         if not dev_txt_col:
             return None, None, "Kolom 'Dev (Hours text)' tidak ditemukan di dalam file Excel."
 
-        # 3. Filter data yang mengandung kata 'jam'
+        # 4. Filter data yang mengandung kata 'jam'
         mask_delay = df[dev_txt_col].astype(str).str.lower().str.contains("jam", na=False)
         df_delay = df[mask_delay].copy()
 
