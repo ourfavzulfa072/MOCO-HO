@@ -318,11 +318,7 @@ else:
     col_i1, col_i2 = st.columns(2)
     with col_i1:
         st.markdown("""
-        #### 🚨 Parameter Audit MOHH
-        * **Filter Target:** Workgroup `OB` dan `COAL`.
-        * **Kalkulasi MOHH:** $\text{EWH} + \text{STB} + \text{BD}$.
-        * **Kriteria Anomali:** Total MOHH $> 24.0$ Jam.
-        """)
+        #### 🚨 Parameter MOHH)
     with col_i2:
         st.markdown("""
         ####  Parameter Audit Latensi Input
