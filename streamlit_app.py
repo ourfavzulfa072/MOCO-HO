@@ -5,13 +5,13 @@ import pandas as pd
 # 1. PAGE CONFIGURATION
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="MOCO - HO ALL SITE",
+    page_title="MOCO - Audit Control Room",
     page_icon="⛏️",
     layout="wide"
 )
 
-st.title("⛏️ MOCO - Mining Operational")
-st.caption("MOHH Anomaly & Latensi Input User (OB & COAL)")
+st.title("⛏️ MOCO - Mining Operational Audit")
+st.caption("Audit Otomatis MOHH Anomaly & Latensi Input User (Khusus WORKGROUP OB & COAL)")
 
 # -----------------------------------------------------------------------------
 # 2. HELPER FUNCTIONS FOR EXCEL PARSING
@@ -101,9 +101,8 @@ def process_aturan_1_summary(file):
 def process_aturan_2_input_time(file):
     """
     Aturan 2: Membaca Input Time (Time Entry)
-    - Otomatis mendeteksi baris header kolom (Input, user, Dev (hours), Dev (Hours text), Time Start, dll.)
     - Menyaring data yang pada kolom Dev (Hours text) mengandung kata 'jam'
-    - Mengambil dan menyajikan SELURUH kolom dari baris yang terlambat tersebut (termasuk kolom Input/tanggal jam)
+    - Menampilkan seluruh kolom dari baris yang terlambat tersebut (termasuk tanggal & jam input)
     """
     try:
         df_raw = pd.read_excel(file, header=None)
@@ -119,20 +118,21 @@ def process_aturan_2_input_time(file):
         # Baca ulang file Excel mulai dari baris header yang ditemukan
         df = pd.read_excel(file, header=header_row)
 
-        # Rapikan nama kolom dari spasi liar/unnamed
-        df.columns = [str(c).strip() for c in df.columns if not str(c).startswith("Unnamed")]
+        # Bersihkan nama kolom tanpa mengurangi jumlah elemen kolom
+        df.columns = [str(c).strip() if pd.notna(c) else f"COL_{i}" for i, c in enumerate(df.columns)]
 
         # Identifikasi kolom Dev (Hours text)
         dev_txt_col = None
         for c in df.columns:
-            if "DEV" in c.upper() and "TEXT" in c.upper():
+            c_str = str(c).upper()
+            if "DEV" in c_str and "TEXT" in c_str:
                 dev_txt_col = c
                 break
         
         # Fallback jika kolom teks tidak terdeteksi eksplisit
         if not dev_txt_col:
             for c in df.columns:
-                if "DEV" in c.upper():
+                if "DEV" in str(c).upper():
                     dev_txt_col = c
 
         if not dev_txt_col:
@@ -141,7 +141,7 @@ def process_aturan_2_input_time(file):
         # FILTER UTAMA: Ambil baris yang kolom Dev (Hours text)-nya mengandung kata 'jam'
         mask_delay = df[dev_txt_col].astype(str).str.lower().str.contains("jam", na=False)
         
-        # Ambil seluruh baris yang terlambat beserta semua kolomnya (Input, user, Dev, Time Start, dst)
+        # Ambil seluruh baris yang terlambat beserta semua kolomnya
         df_delay = df[mask_delay].copy()
 
         return df_delay, df, None
