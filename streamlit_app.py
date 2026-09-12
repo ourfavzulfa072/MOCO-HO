@@ -7,35 +7,29 @@ import io
 # 1. PAGE CONFIGURATION
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="BIMA NUSA INT MOCO - Audit",
-    page_icon="⛏️",
+    page_title="MOCO - Audit Control Room",
+    page_icon="⛏️", 
     layout="wide"
 )
 
-# Custom CSS untuk styling header & card
-st.markdown("""
-    <style>
-    .main-header {
-        font-size: 2.2rem;
-        font-weight: 700;
-        color: #F3F4F6;
-        margin-bottom: 0px;
-    }
-    .sub-header {
-        font-size: 1rem;
-        color: #9CA3AF;
-        margin-bottom: 20px;
-    }
-    </style>
-""", unsafe_allow_html=True)
+st.title("BIMA NUSA INT MOCO - Mining Operational")
+st.caption("MOHH Anomaly & Latensi Input User (OB & COAL)")
 
 # -----------------------------------------------------------------------------
 # 2. HELPER FUNCTIONS FOR EXCEL PARSING
 # -----------------------------------------------------------------------------
 def process_aturan_1_summary(file):
+    """
+    Aturan 1: Membaca Summary Productivity
+    - Filter OB & COAL
+    - Hitung MOHH = EWH + STB + BD
+    - Filter Anomali MOHH > 24 jam (dengan toleransi pembulatan float)
+    - Ambil kolom: DATE, SITE, UNITNO, WORKGROUP, EWH, STB, BD, MOHH, USERNAMES DAY, USERNAMES N
+    """
     try:
         df_raw = pd.read_excel(file, header=None)
         
+        # Cari baris header utama
         header_row = 1
         for idx, row in df_raw.head(15).iterrows():
             row_str = [str(x).upper() for x in row.values if pd.notna(x)]
@@ -43,8 +37,10 @@ def process_aturan_1_summary(file):
                 header_row = idx
                 break
 
+        # Read dengan MultiIndex header (2 baris)
         df = pd.read_excel(file, header=[header_row, header_row + 1])
         
+        # Flatten nama kolom
         cols = []
         for c in df.columns:
             top = str(c[0]).strip() if pd.notna(c[0]) and not str(c[0]).startswith("Unnamed") else ""
@@ -59,6 +55,7 @@ def process_aturan_1_summary(file):
                 cols.append(f"COL_{len(cols)}")
         df.columns = cols
         
+        # Mapping nama kolom standar
         col_map = {}
         for c in df.columns:
             if "WORKGROUP" in c: col_map[c] = "WORKGROUP"
@@ -74,25 +71,31 @@ def process_aturan_1_summary(file):
 
         df = df.rename(columns=col_map)
         
+        # Format kolom DATE agar tidak menampilkan jam
         if "DATE" in df.columns:
             df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
 
+        # Filter Workgroup OB & COAL
         if "WORKGROUP" in df.columns:
             df["WORKGROUP_STR"] = df["WORKGROUP"].astype(str).str.strip().str.upper()
             df = df[df["WORKGROUP_STR"].str.contains("OB|COAL|OVERBURDEN", regex=True, na=False)].copy()
             df = df.drop(columns=["WORKGROUP_STR"])
             
+        # Pastikan kolom numerik untuk kalkulasi
         for num_col in ["EWH", "STB", "BD", "MOHH"]:
             if num_col in df.columns:
                 df[num_col] = pd.to_numeric(df[num_col], errors="coerce").fillna(0)
             else:
                 df[num_col] = 0.0
 
+        # Hitung MOHH dan bulatkan ke 2 desimal untuk mencegah masalah pembulatan desimal
         df["MOHH_CALC"] = (df["EWH"] + df["STB"] + df["BD"]).round(2)
         df["MOHH"] = df.apply(lambda r: r["MOHH_CALC"] if r["MOHH"] == 0 else round(r["MOHH"], 2), axis=1)
         
+        # Filter Anomali: Murni di atas 24 Jam
         df_anomali = df[df["MOHH"] > 24.001].copy()
         
+        # Pilih kolom sesuai Aturan 1
         target_cols = ["DATE", "SITE", "UNITNO", "WORKGROUP", "EWH", "STB", "BD", "MOHH", "USERNAMES DAY", "USERNAMES N"]
         existing_target = [c for c in target_cols if c in df_anomali.columns]
         
@@ -102,9 +105,16 @@ def process_aturan_1_summary(file):
 
 
 def process_aturan_2_input_time(file):
+    """
+    Aturan 2: Membaca Input Time (Time Entry)
+    - Menangani header bertingkat
+    - Format kolom Date agar tanpa jam
+    - Menyaring data yang pada kolom Dev (Hours text) mengandung kata 'jam'
+    """
     try:
         df_raw = pd.read_excel(file, header=None)
         
+        # 1. Cari baris yang mengandung 'DEV (HOURS TEXT)' atau 'INPUT'
         sub_header_row = None
         for idx, row in df_raw.head(15).iterrows():
             row_str = [str(x).upper() for x in row.values if pd.notna(x)]
@@ -117,8 +127,10 @@ def process_aturan_2_input_time(file):
         else:
             df = pd.read_excel(file)
 
+        # Bersihkan nama kolom dari whitespace
         df.columns = [str(c).strip() for c in df.columns]
 
+        # 2. Format kolom Date agar bersih tanpa jam (00:00:00)
         date_col = None
         for c in df.columns:
             if "DATE" in str(c).upper() or "TANGGAL" in str(c).upper():
@@ -128,6 +140,7 @@ def process_aturan_2_input_time(file):
         if date_col:
             df[date_col] = pd.to_datetime(df[date_col], errors="coerce").dt.strftime("%Y-%m-%d")
 
+        # 3. Cari kolom 'Dev (Hours text)'
         dev_txt_col = None
         for c in df.columns:
             c_upper = str(c).upper()
@@ -145,6 +158,7 @@ def process_aturan_2_input_time(file):
         if not dev_txt_col:
             return None, None, "Kolom 'Dev (Hours text)' tidak ditemukan di dalam file Excel."
 
+        # 4. Filter data yang mengandung kata 'jam'
         mask_delay = df[dev_txt_col].astype(str).str.lower().str.contains("jam", na=False)
         df_delay = df[mask_delay].copy()
 
@@ -152,178 +166,153 @@ def process_aturan_2_input_time(file):
     except Exception as e:
         return None, None, str(e)
 
-# Helper untuk Export Excel
+
 def convert_df_to_excel(df):
+    """Helper untuk fitur ekspor laporan ke format Excel"""
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Audit Report')
-    processed_data = output.getvalue()
-    return processed_data
+    return output.getvalue()
 
 # -----------------------------------------------------------------------------
-# 3. SIDEBAR BRANDING & UPLOAD
+# 3. SIDEBAR UPLOAD
 # -----------------------------------------------------------------------------
-with st.sidebar:
-    # Contoh tempat logo (Ganti URL dengan file logo Bima Nusa/MOCO jika ada)
-    st.image("https://img.icons8.com/color/96/mine-cart.png", width=70)
-    st.title("Control Panel")
-    st.caption("BIMA NUSA INT - MOCO Systems")
-    st.markdown("---")
-    
-    st.subheader("📁 Submit Daily Operational Files")
-    file_prod = st.file_uploader("Summary Productivity (.xlsx)", type=["xlsx", "xls"])
-    file_time = st.file_uploader("Input Time / Time Entry (.xlsx)", type=["xlsx", "xls"])
+st.sidebar.header("📁 Submit Daily Operational Files")
+file_prod = st.sidebar.file_uploader("Summary Productivity", type=["xlsx", "xls"])
+file_time = st.sidebar.file_uploader("Input Time / Time Entry", type=["xlsx", "xls"])
 
 # -----------------------------------------------------------------------------
-# 4. MAIN AUDIT DISPLAY & VISUALIZATION
+# 4. MAIN AUDIT DISPLAY
 # -----------------------------------------------------------------------------
-# Header Utama
-col_logo, col_title = st.columns([1, 8])
-with col_title:
-    st.markdown('<p class="main-header">BIMA NUSA INT MOCO - Mining Operational</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">MOHH Anomaly & Latensi Input User (OB & COAL)</p>', unsafe_allow_html=True)
-
 if file_prod is not None and file_time is not None:
     df_m_anomali, df_m_all, err1 = process_aturan_1_summary(file_prod)
     df_t_delay, df_t_all, err2 = process_aturan_2_input_time(file_time)
     
     if err1:
-        st.error(f"Error Aturan 1 (Summary Productivity): {err1}")
+        st.error(f"Error (Summary Productivity): {err1}")
     elif err2:
-        st.error(f"Error Aturan 2 (Input Time): {err2}")
+        st.error(f"Error (Input Time): {err2}")
     else:
-        st.success("✅ File Berhasil Diproses! Menampilkan Dashboard & Hasil Audit.")
+        st.success("✅ File Berhasil Diproses! Menampilkan Hasil...")
         
-        tab1, tab2 = st.tabs(["🚨 Aturan 1: Anomali MOHH (>24 Jam)", "⏱️ Aturan 2: Keterlambatan Input User (>1 Jam)"])
+        tab1, tab2 = st.tabs(["Anomali MOHH (>24 Jam)", "Keterlambatan Input User"])
         
-        # ==========================================
-        # TAB 1: MOHH ANOMALY
-        # ==========================================
+        # TAB 1: ANOMALI MOHH
         with tab1:
-            st.subheader("🚨 Dashboard & Tabel Anomali MOHH (> 24 Jam)")
+            st.subheader("Tabel Anomali MOHH (> 24 Jam)")
+            st.caption("Menampilkan unit kerja OB & COAL yang total MOHH-nya melebihi 24 jam dalam 1 hari operasional.")
             
-            # Metrics Row
             col_m1, col_m2, col_m3 = st.columns(3)
             col_m1.metric("Total Anomali MOHH Found", f"{len(df_m_anomali)} Record")
-            col_m2.metric("Total Evaluated Units", f"{len(df_m_all)} Record")
-            percent_anomali = (len(df_m_anomali) / len(df_m_all) * 100) if len(df_m_all) > 0 else 0
-            col_m3.metric("% Anomali", f"{percent_anomali:.1f}%")
+            col_m2.metric("Total Data OB & COAL Evaluated", f"{len(df_m_all)} Record")
+            pct_m = (len(df_m_anomali) / len(df_m_all) * 100) if len(df_m_all) > 0 else 0
+            col_m3.metric("Rasio Anomali", f"{pct_m:.1f}%")
             
             st.markdown("---")
             
-            # VISUALISASI ATURAN 1
+            # Visualisasi Aturan 1
             if len(df_m_all) > 0:
-                col_chart1, col_chart2 = st.columns(2)
-                
-                with col_chart1:
-                    st.markdown("##### 📊 Komposisi Rata-Rata Jam Operational (Total Data)")
+                cg1, cg2 = st.columns(2)
+                with cg1:
+                    st.markdown("##### 📊 Komposisi Rata-Rata Jam Operasional")
                     avg_hours = pd.DataFrame({
-                        'Kategori': ['EWH', 'STB', 'BD'],
-                        'Jam': [df_m_all['EWH'].mean(), df_m_all['STB'].mean(), df_m_all['BD'].mean()]
+                        'Status': ['EWH', 'STB', 'BD'],
+                        'Rata-Rata Jam': [df_m_all['EWH'].mean(), df_m_all['STB'].mean(), df_m_all['BD'].mean()]
                     })
-                    fig_pie = px.pie(avg_hours, values='Jam', names='Kategori', hole=0.4,
+                    fig_pie = px.pie(avg_hours, values='Rata-Rata Jam', names='Status', hole=0.4,
                                      color_discrete_sequence=['#22c55e', '#eab308', '#ef4444'])
-                    fig_pie.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=300)
+                    fig_pie.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=280)
                     st.plotly_chart(fig_pie, use_container_width=True)
                 
-                with col_chart2:
-                    st.markdown("##### 🏗️ Unit Anomali per Site")
+                with cg2:
+                    st.markdown("##### 🏗️ Anomali per Site")
                     if len(df_m_anomali) > 0 and 'SITE' in df_m_anomali.columns:
-                        site_counts = df_m_anomali['SITE'].value_counts().reset_index()
-                        site_counts.columns = ['SITE', 'Jumlah Anomali']
-                        fig_bar = px.bar(site_counts, x='SITE', y='Jumlah Anomali', color='Jumlah Anomali',
-                                         color_continuous_scale='Reds')
-                        fig_bar.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=300)
+                        site_cnt = df_m_anomali['SITE'].value_counts().reset_index()
+                        site_cnt.columns = ['SITE', 'Jumlah']
+                        fig_bar = px.bar(site_cnt, x='SITE', y='Jumlah', color='Jumlah', color_continuous_scale='Reds')
+                        fig_bar.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=280)
                         st.plotly_chart(fig_bar, use_container_width=True)
                     else:
-                        st.info("Tidak ada grafik site karena 0 anomali ditemukan.")
+                        st.info("Tidak ada grafik site (0 anomali).")
 
-            st.markdown("### 📋 Detail Data Anomali")
+            st.markdown("### Detail Data Anomali")
             if len(df_m_anomali) > 0:
                 st.dataframe(df_m_anomali, use_container_width=True)
-                excel_data1 = convert_df_to_excel(df_m_anomali)
                 st.download_button(
-                    label="📥 Download Data Anomali MOHH (.xlsx)",
-                    data=excel_data1,
-                    file_name="Anomali_MOHH_Report.xlsx",
+                    label="📥 Unduh Data Anomali MOHH (.xlsx)",
+                    data=convert_df_to_excel(df_m_anomali),
+                    file_name="Audit_MOHH_Anomali.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             else:
-                st.info("🎉 Tidak ditemukan anomali MOHH > 24 jam pada file ini.")
+                st.info("Tidak ditemukan anomali MOHH > 24 jam pada file ini.")
 
-        # ==========================================
-        # TAB 2: INPUT TIME LATENCY
-        # ==========================================
+        # TAB 2: KETERLAMBATAN INPUT USER
         with tab2:
-            st.subheader("⏱️ Dashboard & Tabel User Keterlambatan Input (> 1 Jam)")
+            st.subheader("Tabel Keterlambatan Input (> 1 Jam)")
+            st.caption("Menampilkan log input dispatcher/CCR")
             
             col_t1, col_t2, col_t3 = st.columns(3)
             col_t1.metric("Total Terlambat (>1 Jam)", f"{len(df_t_delay)} Record")
-            col_t2.metric("Total Entry Evaluated", f"{len(df_t_all)} Record")
-            percent_delay = (len(df_t_delay) / len(df_t_all) * 100) if len(df_t_all) > 0 else 0
-            col_t3.metric("% Latensi Input", f"{percent_delay:.1f}%")
+            col_t2.metric("Total Time Entry Evaluated", f"{len(df_t_all)} Record")
+            pct_t = (len(df_t_delay) / len(df_t_all) * 100) if len(df_t_all) > 0 else 0
+            col_t3.metric("Rasio Keterlambatan", f"{pct_t:.1f}%")
 
             st.markdown("---")
             
-            # VISUALISASI ATURAN 2
+            # Visualisasi Aturan 2
             if len(df_t_delay) > 0:
-                col_chart3, col_chart4 = st.columns(2)
+                cg3, cg4 = st.columns(2)
+                with cg3:
+                    st.markdown("##### 👤 Top User Terlambat Input")
+                    user_cols = [c for c in df_t_delay.columns if "USER" in str(c).upper()]
+                    if user_cols:
+                        top_users = df_t_delay[user_cols[0]].value_counts().head(5).reset_index()
+                        top_users.columns = ['User', 'Jumlah Log']
+                        fig_u = px.bar(top_users, y='User', x='Jumlah Log', orientation='h',
+                                       color='Jumlah Log', color_continuous_scale='Oranges')
+                        fig_u.update_layout(yaxis={'categoryorder':'total ascending'}, margin=dict(t=10, b=10, l=10, r=10), height=280)
+                        st.plotly_chart(fig_u, use_container_width=True)
                 
-                with col_chart3:
-                    st.markdown("##### 👤 Top 5 User Terlambat Input")
-                    # Cari kolom user secara fleksibel
-                    user_col = [c for c in df_t_delay.columns if "USER" in str(c).upper()]
-                    user_col_name = user_col[0] if user_col else None
-                    
-                    if user_col_name:
-                        top_users = df_t_delay[user_col_name].value_counts().head(5).reset_index()
-                        top_users.columns = ['User', 'Frekuensi']
-                        fig_user = px.bar(top_users, y='User', x='Frekuensi', orientation='h',
-                                          color='Frekuensi', color_continuous_scale='Oranges')
-                        fig_user.update_layout(yaxis={'categoryorder':'total ascending'}, margin=dict(t=20, b=20, l=20, r=20), height=300)
-                        st.plotly_chart(fig_user, use_container_width=True)
-                
-                with col_chart4:
-                    st.markdown("##### ☀️ vs 🌙 Keterlambatan Berdasarkan Shift")
-                    shift_col = [c for c in df_t_delay.columns if "SHIFT" in str(c).upper()]
-                    if shift_col:
-                        shift_counts = df_t_delay[shift_col[0]].value_counts().reset_index()
-                        shift_counts.columns = ['Shift', 'Jumlah']
-                        fig_shift = px.pie(shift_counts, values='Jumlah', names='Shift', color_discrete_sequence=px.colors.qualitative.Set2)
-                        fig_shift.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=300)
-                        st.plotly_chart(fig_shift, use_container_width=True)
+                with cg4:
+                    st.markdown("##### ☀️ vs 🌙 Keterlambatan per Shift")
+                    shift_cols = [c for c in df_t_delay.columns if "SHIFT" in str(c).upper()]
+                    if shift_cols:
+                        shift_cnt = df_t_delay[shift_cols[0]].value_counts().reset_index()
+                        shift_cnt.columns = ['Shift', 'Jumlah']
+                        fig_s = px.pie(shift_cnt, values='Jumlah', names='Shift', color_discrete_sequence=px.colors.qualitative.Set2)
+                        fig_s.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=280)
+                        st.plotly_chart(fig_s, use_container_width=True)
 
-            st.markdown("### 📋 Detail Log Keterlambatan User")
+            st.markdown("### Detail Data Keterlambatan")
             if len(df_t_delay) > 0:
                 st.dataframe(df_t_delay, use_container_width=True)
-                excel_data2 = convert_df_to_excel(df_t_delay)
                 st.download_button(
-                    label="📥 Download Data Latensi Input (.xlsx)",
-                    data=excel_data2,
-                    file_name="Latensi_Input_User_Report.xlsx",
+                    label="📥 Unduh Data Keterlambatan Input (.xlsx)",
+                    data=convert_df_to_excel(df_t_delay),
+                    file_name="Audit_Keterlambatan_Input.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             else:
-                st.info("🎉 Tidak ditemukan keterlambatan input user > 1 jam pada file ini.")
+                st.info("Tidak ditemukan keterlambatan input user > 1 jam pada file ini.")
 
 else:
-    # Tampilan saat belum ada file yang diunggah
-    st.info("👋 Silakan unggah **kedua file Excel di sidebar kiri** untuk memulai audit Aturan 1 dan Aturan 2.")
+    st.info("👋 Silakan unggah **file Excel di sidebar kiri** untuk memulai.")
     
-    # Placeholder visual / Info Card agar ruang kosong tetap menarik
+    # Ringkasan Parameter Sistem Saat Belum Ada File
     st.markdown("---")
-    col_info1, col_info2 = st.columns(2)
-    with col_info1:
+    col_i1, col_i2 = st.columns(2)
+    with col_i1:
         st.markdown("""
-        ### 🚨 Aturan 1: Audit MOHH Anomaly
-        * **Syarat Target:** Workgroup **OB** dan **COAL**.
-        * **Kalkulasi:** Total MOHH = $\text{EWH} + \text{STB} + \text{BD}$.
-        * **Kriteria Anomali:** Total MOHH $> 24.0$ jam.
+        #### 🚨 Parameter Audit MOHH
+        * **Filter Target:** Workgroup `OB` dan `COAL`.
+        * **Kalkulasi MOHH:** $\text{EWH} + \text{STB} + \text{BD}$.
+        * **Kriteria Anomali:** Total MOHH $> 24.0$ Jam.
         """)
-    with col_info2:
+    with col_i2:
         st.markdown("""
-        ### ⏱️ Aturan 2: Latensi Input User
-        * **Syarat Target:** Log pengetikan user/dispatcher.
-        * **Deteksi:** Membaca kolom `Dev (Hours text)`.
-        * **Kriteria Anomali:** Memuat teks berdurasi jam (terlambat $> 1$ jam).
+        #### ⏱️ Parameter Audit Latensi Input
+        * **Filter Target:** Log entri waktu operasional.
+        * **Pencarian Kolom:** Membaca kolom `Dev (Hours text)`.
+        * **Kriteria Delay:** Memuat kata `"jam"` (terlambat $> 1$ jam).
         """)
