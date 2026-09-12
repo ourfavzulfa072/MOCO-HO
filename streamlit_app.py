@@ -99,51 +99,52 @@ def process_aturan_1_summary(file):
 
 def process_aturan_2_input_time(file):
     """
-    Aturan 2: Membaca Input Time (Time Entry)
-    - Filter Dev (Hours) > 1 / Keterlambatan input > 1 jam
-    - Ambil kolom: DATE, SHIFT, KODE UNIT, WORKGROUP, INPUT TIME, USER, DEV (HOURS TEXT), TIME START, TIME END
+    Aturan 2: Membaca Input Time (Time Entry) berdasarkan Dev (hours) > 1
     """
     try:
         df = pd.read_excel(file)
-        df.columns = [str(c).strip().upper() for c in df.columns]
         
-        # Standardisasi pencarian kolom
-        col_map = {}
+        # Bersihkan nama kolom dari spasi berlebih
+        df.columns = [str(c).strip() for c in df.columns]
+        
+        # Identifikasi kolom yang relevan
+        dev_hrs_col = None
+        dev_txt_col = None
+        
         for c in df.columns:
-            if "DATE" in c or "TANGGAL" in c: col_map[c] = "DATE"
-            elif "SHIFT" in c: col_map[c] = "SHIFT"
-            elif "UNIT" in c or "KODE" in c: col_map[c] = "KODE UNIT"
-            elif "WORKGROUP" in c or "MATERIAL" in c: col_map[c] = "WORKGROUP"
-            elif "START" in c: col_map[c] = "TIME START"
-            elif "END" in c: col_map[c] = "TIME END"
-            elif "INPUT" in c and "TIME" in c: col_map[c] = "INPUT TIME"
-            elif "USER" in c or "DISPATCHER" in c: col_map[c] = "USER"
-            elif "DEV" in c and ("TEXT" in c or "HOURS" in c): col_map[c] = "DEV (HOURS TEXT)"
-            elif "DEV" in c: col_map[c] = "DEV_HOURS"
-            
-        df = df.rename(columns=col_map)
-        
+            c_upper = c.upper()
+            if "DEV" in c_upper and "TEXT" not in c_upper and "HOURS" in c_upper:
+                dev_hrs_col = c
+            elif "DEV" in c_upper and "TEXT" in c_upper:
+                dev_txt_col = c
+
         # Filter Workgroup OB & COAL jika ada kolom WORKGROUP
-        if "WORKGROUP" in df.columns:
-            df["WORKGROUP"] = df["WORKGROUP"].astype(str).str.strip().str.upper()
-            df = df[df["WORKGROUP"].isin(["OB", "COAL"])].copy()
+        wg_col = [c for c in df.columns if "WORKGROUP" in c.upper() or "MATERIAL" in c.upper()]
+        if wg_col:
+            df[wg_col[0]] = df[wg_col[0]].astype(str).str.strip().str.upper()
+            df = df[df[wg_col[0]].isin(["OB", "COAL"])].copy()
 
-        # Konversi Dev Hours ke Angka untuk Filter > 1 jam
-        if "DEV_HOURS" in df.columns:
-            df["DEV_HOURS_NUM"] = pd.to_numeric(df["DEV_HOURS"], errors="coerce").fillna(0)
-        elif "DEV (HOURS TEXT)" in df.columns:
-            df["DEV_HOURS_NUM"] = df["DEV (HOURS TEXT)"].astype(str).str.extract(r'(\d+)')[0].astype(float).fillna(0)
+        # Konversi nilai Dev (hours) ke angka numerik untuk filtering
+        if dev_hrs_col:
+            df["DEV_NUM"] = pd.to_numeric(df[dev_hrs_col], errors="coerce").fillna(0)
+        elif dev_txt_col:
+            df["DEV_NUM"] = df[dev_txt_col].astype(str).str.extract(r"(\d+)")[0].astype(float).fillna(0)
         else:
-            df["DEV_HOURS_NUM"] = 0
+            df["DEV_NUM"] = 0
 
-        # Filter Anomali keterlambatan > 1 jam
-        df_delay = df[df["DEV_HOURS_NUM"] > 1.0].copy()
+        # Filter Anomali keterlambatan > 1.0 jam
+        df_delay = df[df["DEV_NUM"] > 1.0].copy()
         
-        # Pilih kolom sesuai Aturan 2
-        target_cols = ["DATE", "SHIFT", "KODE UNIT", "WORKGROUP", "INPUT TIME", "USER", "DEV (HOURS TEXT)", "TIME START", "TIME END"]
-        existing_target = [c for c in target_cols if c in df_delay.columns]
+        # Urutkan berdasarkan keterlambatan terbesar
+        df_delay = df_delay.sort_values(by="DEV_NUM", ascending=False)
         
-        return df_delay[existing_target], df[[c for c in target_cols if c in df.columns]], None
+        # Drop kolom pembantu kalkulasi
+        if "DEV_NUM" in df_delay.columns:
+            df_delay = df_delay.drop(columns=["DEV_NUM"])
+        if "DEV_NUM" in df.columns:
+            df = df.drop(columns=["DEV_NUM"])
+
+        return df_delay, df, None
     except Exception as e:
         return None, None, str(e)
 
