@@ -7,7 +7,7 @@ import io
 # 1. PAGE CONFIGURATION
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="MOCO - Audit Control Room",
+    page_title="MOCO",
     page_icon="⛏️", 
     layout="wide"
 )
