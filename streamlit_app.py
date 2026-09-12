@@ -167,7 +167,7 @@ def process_aturan_2_input_time(file):
 # -----------------------------------------------------------------------------
 # 3. SIDEBAR UPLOAD
 # -----------------------------------------------------------------------------
-st.sidebar.header("📁 Upload Operational Files")
+st.sidebar.header("📁 Submit Daily Operational Files")
 file_prod = st.sidebar.file_uploader("Summary Productivity", type=["xlsx", "xls"])
 file_time = st.sidebar.file_uploader("Input Time / Time Entry", type=["xlsx", "xls"])
 
@@ -185,10 +185,10 @@ if file_prod is not None and file_time is not None:
     else:
         st.success("✅ File Berhasil Diproses! Menampilkan Hasil...")
         
-        tab1, tab2 = st.tabs(["🚨 Anomali MOHH (>24 Jam)", "⏱️ Keterlambatan Input User"])
+        tab1, tab2 = st.tabs(["Anomali MOHH (>24 Jam)", "Keterlambatan Input User"])
         
         with tab1:
-            st.subheader("🚨 Tabel Anomali MOHH (> 24 Jam)")
+            st.subheader("Tabel Anomali MOHH (> 24 Jam)")
             st.caption("Menampilkan unit kerja OB & COAL yang total MOHH-nya melebihi 24 jam dalam 1 hari operasional.")
             
             col_m1, col_m2 = st.columns(2)
@@ -198,10 +198,10 @@ if file_prod is not None and file_time is not None:
             if len(df_m_anomali) > 0:
                 st.dataframe(df_m_anomali, use_container_width=True)
             else:
-                st.info("🎉 Tidak ditemukan anomali MOHH > 24 jam pada file ini.")
+                st.info("Tidak ditemukan anomali MOHH > 24 jam pada file ini.")
 
         with tab2:
-            st.subheader("⏱️ Tabel Keterlambatan Input (> 1 Jam)")
+            st.subheader("Tabel Keterlambatan Input (> 1 Jam)")
             st.caption("Menampilkan log input dispatcher/CCR")
             
             col_t1, col_t2 = st.columns(2)
@@ -211,7 +211,7 @@ if file_prod is not None and file_time is not None:
             if len(df_t_delay) > 0:
                 st.dataframe(df_t_delay, use_container_width=True)
             else:
-                st.info("🎉 Tidak ditemukan keterlambatan input user > 1 jam pada file ini.")
+                st.info("Tidak ditemukan keterlambatan input user > 1 jam pada file ini.")
 
 else:
     st.info("👋 Silakan unggah **file Excel di sidebar kiri** untuk memulai.")
