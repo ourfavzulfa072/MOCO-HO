@@ -10,7 +10,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("⛏️ MOCO - Mining Operational Audit")
+st.title("BIMA NUSA INT MOCO - Mining Operational")
 st.caption("Audit Otomatis MOHH Anomaly & Latensi Input User (Khusus WORKGROUP OB & COAL)")
 
 # -----------------------------------------------------------------------------
