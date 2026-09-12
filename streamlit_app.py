@@ -101,47 +101,52 @@ def process_aturan_1_summary(file):
 def process_aturan_2_input_time(file):
     """
     Aturan 2: Membaca Input Time (Time Entry)
-    - Menyaring data yang pada kolom Dev (Hours text) mengandung kata 'jam'
-    - Menampilkan seluruh kolom dari baris yang terlambat tersebut (termasuk tanggal & jam input)
+    - Menangani header bertingkat (Input Time & Time Breakdown di baris atas)
+    - Mencari kolom 'Dev (Hours text)' dengan akurat
+    - Menyaring data yang mengandung kata 'jam'
     """
     try:
         df_raw = pd.read_excel(file, header=None)
         
-        # Deteksi baris yang berisi header tabel aktual
-        header_row = 0
+        # 1. Cari baris mana yang mengandung 'DEV (HOURS TEXT)' atau 'INPUT'
+        sub_header_row = None
         for idx, row in df_raw.head(15).iterrows():
             row_str = [str(x).upper() for x in row.values if pd.notna(x)]
-            if any("DEV" in item or "INPUT" in item for item in row_str):
-                header_row = idx
+            if any("DEV (HOURS TEXT)" in item or "DEV (HOURS)" in item for item in row_str):
+                sub_header_row = idx
                 break
 
-        # Baca ulang file Excel mulai dari baris header yang ditemukan
-        df = pd.read_excel(file, header=header_row)
+        # Jika ditemukan baris sub-header khusus (baris ke-2 header)
+        if sub_header_row is not None:
+            df = pd.read_excel(file, header=sub_header_row)
+        else:
+            # Fallback jika hanya ada 1 header biasa
+            df = pd.read_excel(file)
 
-        # Bersihkan nama kolom tanpa mengurangi jumlah elemen kolom
-        df.columns = [str(c).strip() if pd.notna(c) else f"COL_{i}" for i, c in enumerate(df.columns)]
+        # Bersihkan nama kolom dari whitespace
+        df.columns = [str(c).strip() for c in df.columns]
 
-        # Identifikasi kolom Dev (Hours text)
+        # 2. Cari kolom 'Dev (Hours text)' secara fleksibel
         dev_txt_col = None
         for c in df.columns:
-            c_str = str(c).upper()
-            if "DEV" in c_str and "TEXT" in c_str:
+            c_upper = str(c).upper()
+            if "DEV" in c_upper and "TEXT" in c_upper:
                 dev_txt_col = c
                 break
-        
-        # Fallback jika kolom teks tidak terdeteksi eksplisit
+
+        # Fallback jika teks 'text' tidak ada tapi ada kata 'Dev' kedua
         if not dev_txt_col:
-            for c in df.columns:
-                if "DEV" in str(c).upper():
-                    dev_txt_col = c
+            dev_cols = [c for c in df.columns if "DEV" in str(c).upper()]
+            if len(dev_cols) >= 2:
+                dev_txt_col = dev_cols[1]  # Biasanya kolom Dev ke-2 adalah text
+            elif len(dev_cols) == 1:
+                dev_txt_col = dev_cols[0]
 
         if not dev_txt_col:
             return None, None, "Kolom 'Dev (Hours text)' tidak ditemukan di dalam file Excel."
 
-        # FILTER UTAMA: Ambil baris yang kolom Dev (Hours text)-nya mengandung kata 'jam'
+        # 3. Filter data yang mengandung kata 'jam'
         mask_delay = df[dev_txt_col].astype(str).str.lower().str.contains("jam", na=False)
-        
-        # Ambil seluruh baris yang terlambat beserta semua kolomnya
         df_delay = df[mask_delay].copy()
 
         return df_delay, df, None
@@ -169,7 +174,6 @@ if file_prod is not None and file_time is not None:
     else:
         st.success("✅ File Berhasil Diproses! Menampilkan Hasil Audit Aturan 1 & Aturan 2.")
         
-        # TAB DISPLAY FOR CLEAN LAYOUT
         tab1, tab2 = st.tabs(["🚨 Aturan 1: Anomali MOHH (>24 Jam)", "⏱️ Aturan 2: Keterlambatan Input User (>1 Jam)"])
         
         with tab1:
