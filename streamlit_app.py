@@ -2,18 +2,29 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import io
+import os
 
 # -----------------------------------------------------------------------------
 # 1. PAGE CONFIGURATION
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="MOCO",
+    page_title="MOCO - Audit Control Room",
     page_icon="⛏️", 
     layout="wide"
 )
 
-st.title("BIMA NUSA INT MOCO - Mining Operational")
-st.caption("MOHH Anomaly & Latensi Input User (OB & COAL)")
+# Header Utama dengan Logo
+col_logo, col_title = st.columns([1, 6])
+
+with col_logo:
+    if os.path.exists("BN.png"):
+        st.image("BN.png", width=90)
+    else:
+        st.write("📌 *(Upload logo.png ke Git)*")
+
+with col_title:
+    st.title("BIMA NUSA INT MOCO - Mining Operational")
+    st.caption("MOHH Anomaly & Latensi Input User (OB & COAL)")
 
 # -----------------------------------------------------------------------------
 # 2. HELPER FUNCTIONS FOR EXCEL PARSING
@@ -88,7 +99,7 @@ def process_aturan_1_summary(file):
             else:
                 df[num_col] = 0.0
 
-        # Hitung MOHH dan bulatkan ke 2 desimal untuk mencegah masalah pembulatan desimal
+        # Hitung MOHH dan bulatkan ke 2 desimal
         df["MOHH_CALC"] = (df["EWH"] + df["STB"] + df["BD"]).round(2)
         df["MOHH"] = df.apply(lambda r: r["MOHH_CALC"] if r["MOHH"] == 0 else round(r["MOHH"], 2), axis=1)
         
@@ -175,11 +186,15 @@ def convert_df_to_excel(df):
     return output.getvalue()
 
 # -----------------------------------------------------------------------------
-# 3. SIDEBAR UPLOAD
+# 3. SIDEBAR UPLOAD & BRANDING
 # -----------------------------------------------------------------------------
-st.sidebar.header("📁 Submit Daily Operational Files")
-file_prod = st.sidebar.file_uploader("Summary Productivity", type=["xlsx", "xls"])
-file_time = st.sidebar.file_uploader("Input Time / Time Entry", type=["xlsx", "xls"])
+with st.sidebar:
+    if os.path.exists("logo.png"):
+        st.image("logo.png", use_container_width=True)
+    
+    st.header("📁 Submit Daily Operational Files")
+    file_prod = st.file_uploader("Summary Productivity", type=["xlsx", "xls"])
+    file_time = st.file_uploader("Input Time / Time Entry", type=["xlsx", "xls"])
 
 # -----------------------------------------------------------------------------
 # 4. MAIN AUDIT DISPLAY
@@ -297,9 +312,8 @@ if file_prod is not None and file_time is not None:
                 st.info("Tidak ditemukan keterlambatan input user > 1 jam pada file ini.")
 
 else:
-    st.info("👋 Silakan unggah **file Excel di sidebar kiri** untuk memulai.")
+    st.info("Silakan unggah **file Excel di sidebar kiri** untuk memulai.")
     
-    # Ringkasan Parameter Sistem Saat Belum Ada File
     st.markdown("---")
     col_i1, col_i2 = st.columns(2)
     with col_i1:
@@ -311,7 +325,7 @@ else:
         """)
     with col_i2:
         st.markdown("""
-        #### ⏱️ Parameter Audit Latensi Input
+        ####  Parameter Audit Latensi Input
         * **Filter Target:** Log entri waktu operasional.
         * **Pencarian Kolom:** Membaca kolom `Dev (Hours text)`.
         * **Kriteria Delay:** Memuat kata `"jam"` (terlambat $> 1$ jam).
