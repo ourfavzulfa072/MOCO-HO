@@ -1,215 +1,201 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 
 # -----------------------------------------------------------------------------
 # 1. PAGE CONFIGURATION
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="MOCO - Performance Control Room Dashboard",
-    page_icon="BNI",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="MOCO - Audit Control Room",
+    page_icon="⛏️",
+    layout="wide"
 )
 
-st.title("MOCO - Performance Control Room Dashboard")
-st.markdown("""
-**Single-Site Audit Session:** Unggah 2 file ERP harian (*Summary Productivity* & *Input Time*) untuk audit otomatis integritas Unit No, jam kerja unit (MOHH, HM/EWH), dan latensi inputan dispatcher.
-""")
+st.title("⛏️ MOCO - Mining Operational Audit")
+st.caption("Audit Otomatis MOHH Anomaly & Latensi Input User (Khusus WORKGROUP OB & COAL)")
 
 # -----------------------------------------------------------------------------
 # 2. HELPER FUNCTIONS FOR EXCEL PARSING
 # -----------------------------------------------------------------------------
-def load_summary_productivity(file):
+def process_aturan_1_summary(file):
     """
-    Membaca & membersihkan file Summary Productivity secara aman dari NaN/float.
-    Mendukung deteksi UNIT NO, WORKGROUP (OB & COAL), dan grup jam kerja (HM, EWH, STB, BD, MOHH).
+    Aturan 1: Membaca Summary Productivity
+    - Filter OB & COAL
+    - Hitung MOHH = EWH + STB + BD
+    - Filter Anomali MOHH > 24 jam
+    - Ambil kolom: DATE, SITE, UNITNO, WORKGROUP, EWH, STB, BD, MOHH, USERNAMES DAY, USERNAMES N
     """
     try:
-        # 1. Read raw excel
         df_raw = pd.read_excel(file, header=None)
         
-        # 2. Cari baris header secara aman (mencari kata 'WORKGROUP' atau 'UNIT' atau 'MODEL')
-        header_row_idx = None
+        # Cari baris header utama
+        header_row = 1
         for idx, row in df_raw.head(15).iterrows():
-            row_vals = [str(x).upper() for x in row.values if pd.notna(x)]
-            if any("WORKGROUP" in item or "MODEL" in item for item in row_vals):
-                header_row_idx = idx
+            row_str = [str(x).upper() for x in row.values if pd.notna(x)]
+            if any("WORKGROUP" in item for item in row_str):
+                header_row = idx
                 break
+
+        # Read dengan MultiIndex header (2 baris)
+        df = pd.read_excel(file, header=[header_row, header_row + 1])
         
-        if header_row_idx is None:
-            header_row_idx = 1  # Fallback ke baris ke-2
-            
-        # 3. Read dengan header bertingkat
-        df = pd.read_excel(file, header=[header_row_idx, header_row_idx + 1])
-        
-        # 4. Flatten MultiIndex columns secara aman
-        flat_cols = []
-        for col in df.columns:
-            l1 = str(col[0]).strip() if pd.notna(col[0]) and not str(col[0]).startswith("Unnamed") else ""
-            l2 = str(col[1]).strip() if pd.notna(col[1]) and not str(col[1]).startswith("Unnamed") else ""
-            
-            if l1 and l2:
-                flat_cols.append(f"{l1}_{l2}".upper())
-            elif l1:
-                flat_cols.append(l1.upper())
-            elif l2:
-                flat_cols.append(l2.upper())
+        # Flatten nama kolom
+        cols = []
+        for c in df.columns:
+            top = str(c[0]).strip() if pd.notna(c[0]) and not str(c[0]).startswith("Unnamed") else ""
+            bot = str(c[1]).strip() if pd.notna(c[1]) and not str(c[1]).startswith("Unnamed") else ""
+            if top and bot:
+                cols.append(f"{top}_{bot}".upper())
+            elif top:
+                cols.append(top.upper())
+            elif bot:
+                cols.append(bot.upper())
             else:
-                flat_cols.append(f"COL_{len(flat_cols)}")
+                cols.append(f"COL_{len(cols)}")
+        df.columns = cols
         
-        df.columns = flat_cols
-        
-        # 5. Cari dan standardisasi nama kolom penting (WORKGROUP & UNIT NO)
-        wg_cols = [c for c in df.columns if "WORKGROUP" in c]
-        if wg_cols:
-            df = df.rename(columns={wg_cols[0]: "WORKGROUP"})
-        else:
-            df.rename(columns={df.columns[0]: "WORKGROUP"}, inplace=True)
+        # Mapping nama kolom standar
+        col_map = {}
+        for c in df.columns:
+            if "WORKGROUP" in c: col_map[c] = "WORKGROUP"
+            elif "SITE" in c: col_map[c] = "SITE"
+            elif "UNIT" in c or "CN" in c or "EQUIPMENT" in c: col_map[c] = "UNITNO"
+            elif "DATE" in c or "TANGGAL" in c: col_map[c] = "DATE"
+            elif c.endswith("_EWH") or c == "EWH": col_map[c] = "EWH"
+            elif c.endswith("_STB") or c == "STB": col_map[c] = "STB"
+            elif c.endswith("_BD") or c == "BD": col_map[c] = "BD"
+            elif c.endswith("_MOHH") or c == "MOHH": col_map[c] = "MOHH"
+            elif "USER" in c and ("DAY" in c or "_D" in c): col_map[c] = "USERNAMES DAY"
+            elif "USER" in c and ("NIGHT" in c or "_N" in c): col_map[c] = "USERNAMES N"
 
-        unit_cols = [c for c in df.columns if "UNIT" in c or "CN" in c or "NO" in c or "EQ" in c]
-        if unit_cols:
-            df = df.rename(columns={unit_cols[0]: "UNIT_NO"})
-
-        # Clean & Filter WORKGROUP (Hanya OB dan COAL)
-        df['WORKGROUP'] = df['WORKGROUP'].astype(str).str.strip().str.upper()
-        df_filtered = df[df['WORKGROUP'].isin(['OB', 'COAL'])].copy()
+        df = df.rename(columns=col_map)
         
-        # Bersihkan string UNIT_NO jika ada
-        if "UNIT_NO" in df_filtered.columns:
-            df_filtered['UNIT_NO'] = df_filtered['UNIT_NO'].astype(str).str.strip()
+        # Filter Workgroup OB & COAL
+        if "WORKGROUP" in df.columns:
+            df["WORKGROUP"] = df["WORKGROUP"].astype(str).str.strip().str.upper()
+            df = df[df["WORKGROUP"].isin(["OB", "COAL"])].copy()
             
-        return df_filtered, None
-    except Exception as e:
-        return None, str(e)
+        # Pastikan kolom numerik untuk kalkulasi
+        for num_col in ["EWH", "STB", "BD", "MOHH"]:
+            if num_col in df.columns:
+                df[num_col] = pd.to_numeric(df[num_col], errors="coerce").fillna(0)
+            else:
+                df[num_col] = 0.0
 
-def load_input_time(file):
+        # Jika MOHH 0 atau tidak ada, hitung MOHH = EWH + STB + BD
+        df["MOHH_CALC"] = df["EWH"] + df["STB"] + df["BD"]
+        df["MOHH"] = df.apply(lambda r: r["MOHH_CALC"] if r["MOHH"] == 0 else r["MOHH"], axis=1)
+        
+        # Filter Anomali: MOHH > 24 Jam
+        df_anomali = df[df["MOHH"] > 24.0].copy()
+        
+        # Pilih kolom sesuai Aturan 1
+        target_cols = ["DATE", "SITE", "UNITNO", "WORKGROUP", "EWH", "STB", "BD", "MOHH", "USERNAMES DAY", "USERNAMES N"]
+        existing_target = [c for c in target_cols if c in df_anomali.columns]
+        
+        return df_anomali[existing_target], df[existing_target], None
+    except Exception as e:
+        return None, None, str(e)
+
+
+def process_aturan_2_input_time(file):
     """
-    Membaca & membersihkan file Input Time (Time Entry).
+    Aturan 2: Membaca Input Time (Time Entry)
+    - Filter Dev (Hours) > 1 / Keterlambatan input > 1 jam
+    - Ambil kolom: DATE, SHIFT, KODE UNIT, WORKGROUP, INPUT TIME, USER, DEV (HOURS TEXT), TIME START, TIME END
     """
     try:
         df = pd.read_excel(file)
-        # Flatten string columns
         df.columns = [str(c).strip().upper() for c in df.columns]
-        return df, None
+        
+        # Standardisasi pencarian kolom
+        col_map = {}
+        for c in df.columns:
+            if "DATE" in c or "TANGGAL" in c: col_map[c] = "DATE"
+            elif "SHIFT" in c: col_map[c] = "SHIFT"
+            elif "UNIT" in c or "KODE" in c: col_map[c] = "KODE UNIT"
+            elif "WORKGROUP" in c or "MATERIAL" in c: col_map[c] = "WORKGROUP"
+            elif "START" in c: col_map[c] = "TIME START"
+            elif "END" in c: col_map[c] = "TIME END"
+            elif "INPUT" in c and "TIME" in c: col_map[c] = "INPUT TIME"
+            elif "USER" in c or "DISPATCHER" in c: col_map[c] = "USER"
+            elif "DEV" in c and ("TEXT" in c or "HOURS" in c): col_map[c] = "DEV (HOURS TEXT)"
+            elif "DEV" in c: col_map[c] = "DEV_HOURS"
+            
+        df = df.rename(columns=col_map)
+        
+        # Filter Workgroup OB & COAL jika ada kolom WORKGROUP
+        if "WORKGROUP" in df.columns:
+            df["WORKGROUP"] = df["WORKGROUP"].astype(str).str.strip().str.upper()
+            df = df[df["WORKGROUP"].isin(["OB", "COAL"])].copy()
+
+        # Konversi Dev Hours ke Angka untuk Filter > 1 jam
+        if "DEV_HOURS" in df.columns:
+            df["DEV_HOURS_NUM"] = pd.to_numeric(df["DEV_HOURS"], errors="coerce").fillna(0)
+        elif "DEV (HOURS TEXT)" in df.columns:
+            df["DEV_HOURS_NUM"] = df["DEV (HOURS TEXT)"].astype(str).str.extract(r'(\d+)')[0].astype(float).fillna(0)
+        else:
+            df["DEV_HOURS_NUM"] = 0
+
+        # Filter Anomali keterlambatan > 1 jam
+        df_delay = df[df["DEV_HOURS_NUM"] > 1.0].copy()
+        
+        # Pilih kolom sesuai Aturan 2
+        target_cols = ["DATE", "SHIFT", "KODE UNIT", "WORKGROUP", "INPUT TIME", "USER", "DEV (HOURS TEXT)", "TIME START", "TIME END"]
+        existing_target = [c for c in target_cols if c in df_delay.columns]
+        
+        return df_delay[existing_target], df[[c for c in target_cols if c in df.columns]], None
     except Exception as e:
-        return None, str(e)
+        return None, None, str(e)
 
 # -----------------------------------------------------------------------------
-# 3. SIDEBAR UPLOAD CONTROL PANEL
+# 3. SIDEBAR UPLOAD
 # -----------------------------------------------------------------------------
 st.sidebar.header("📁 Upload Operational Files")
-file_summary = st.sidebar.file_uploader(
-    "1. Summary Productivity", 
-    type=["xlsx", "xls"],
-    help="Upload file Summary Productivity (memuat Unit No, MOHH, HM, EWH, BD, STB, dan Workgroup)."
-)
-
-file_input_time = st.sidebar.file_uploader(
-    "2. Input Time / Time Entry", 
-    type=["xlsx", "xls"],
-    help="Upload file Time Entry (memuat jam entri data dan nama User/Dispatcher)."
-)
+file_prod = st.sidebar.file_uploader("1. Summary Productivity (.xlsx)", type=["xlsx", "xls"])
+file_time = st.sidebar.file_uploader("2. Input Time / Time Entry (.xlsx)", type=["xlsx", "xls"])
 
 # -----------------------------------------------------------------------------
-# 4. DASHBOARD PROCESSING LOGIC
+# 4. MAIN AUDIT DISPLAY
 # -----------------------------------------------------------------------------
-if file_summary is not None and file_input_time is not None:
-    df_prod, err_prod = load_summary_productivity(file_summary)
-    df_time, err_time = load_input_time(file_input_time)
+if file_prod is not None and file_time is not None:
+    df_m_anomali, df_m_all, err1 = process_aturan_1_summary(file_prod)
+    df_t_delay, df_t_all, err2 = process_aturan_2_input_time(file_time)
     
-    if err_prod:
-        st.error(f"Gagal membaca file Summary Productivity: {err_prod}")
-    elif err_time:
-        st.error(f"Gagal membaca file Input Time: {err_time}")
+    if err1:
+        st.error(f"Error Aturan 1 (Summary Productivity): {err1}")
+    elif err2:
+        st.error(f"Error Aturan 2 (Input Time): {err2}")
     else:
-        st.success("✅ File berhasil diunggah & difilter! Menampilkan analisa site operasional.")
+        st.success("✅ File Berhasil Diproses! Menampilkan Hasil Audit Aturan 1 & Aturan 2.")
         
-        # ---------------------------------------------------------
-        # A. EXECUTIVE SUMMARY CARDS
-        # ---------------------------------------------------------
-        st.subheader("📌 Executive Operational Overview (OB & COAL Only)")
+        # TAB DISPLAY FOR CLEAN LAYOUT
+        tab1, tab2 = st.tabs(["🚨 Aturan 1: Anomali MOHH (>24 Jam)", "⏱️ Aturan 2: Keterlambatan Input User (>1 Jam)"])
         
-        col1, col2, col3, col4 = st.columns(4)
-        
-        total_records = len(df_prod)
-        total_ob = len(df_prod[df_prod['WORKGROUP'] == 'OB'])
-        total_coal = len(df_prod[df_prod['WORKGROUP'] == 'COAL'])
-        total_units = df_prod['UNIT_NO'].nunique() if 'UNIT_NO' in df_prod.columns else total_records
-        
-        with col1:
-            st.metric("Total Active Units", f"{total_units:,} Units")
-        with col2:
-            st.metric("OB Units", f"{total_ob:,}")
-        with col3:
-            st.metric("COAL Units", f"{total_coal:,}")
-        with col4:
-            st.metric("Total Records Filtered", f"{total_records:,}")
+        with tab1:
+            st.subheader("🚨 Tabel Anomali MOHH (> 24 Jam)")
+            st.caption("Menampilkan unit kerja OB & COAL yang total MOHH-nya melebihi 24 jam dalam 1 hari operasional.")
             
-        st.markdown("---")
-        
-        # ---------------------------------------------------------
-        # B. DATA PREVIEW & WORKGROUP DISTRIBUTION
-        # ---------------------------------------------------------
-        left_col, right_col = st.columns([2, 1])
-        
-        with left_col:
-            st.subheader("📊 Summary Productivity Data (OB & COAL)")
-            st.dataframe(df_prod.head(100), use_container_width=True)
+            col_m1, col_m2 = st.columns(2)
+            col_m1.metric("Total Anomali MOHH Found", f"{len(df_m_anomali)} Record")
+            col_m2.metric("Total Data OB & COAL Evaluated", f"{len(df_m_all)} Record")
             
-        with right_col:
-            st.subheader("🥧 Workgroup Distribution")
-            wg_counts = df_prod['WORKGROUP'].value_counts().reset_index()
-            wg_counts.columns = ['WORKGROUP', 'COUNT']
-            fig_pie = px.pie(
-                wg_counts, 
-                values='COUNT', 
-                names='WORKGROUP', 
-                color='WORKGROUP',
-                color_discrete_map={'OB': '#FFA500', 'COAL': '#333333'},
-                hole=0.4
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
+            if len(df_m_anomali) > 0:
+                st.dataframe(df_m_anomali, use_container_width=True)
+            else:
+                st.info("🎉 Tidak ditemukan anomali MOHH > 24 jam pada file ini.")
 
-        st.markdown("---")
-        
-        # ---------------------------------------------------------
-        # C. TIME ENTRY & DISPATCHER LATENCY AUDIT
-        # ---------------------------------------------------------
-        st.subheader("⏱️ Dispatcher Input Latency & User Audit")
-        
-        st.dataframe(df_time.head(100), use_container_width=True)
-        
-        # Identifikasi kolom User / Dispatcher di file Time Entry
-        user_cols = [c for c in df_time.columns if "USER" in c or "DISPATCHER" in c or "CREATED" in c]
-        if user_cols:
-            user_col_name = user_cols[0]
-            st.subheader("🏆 Leaderboard Inputter / Dispatcher Activity")
-            user_summary = df_time[user_col_name].value_counts().reset_index()
-            user_summary.columns = ['User / Dispatcher', 'Total Input Entries']
+        with tab2:
+            st.subheader("⏱️ Tabel User Keterlambatan Input (> 1 Jam)")
+            st.caption("Menampilkan log pengetikan user/dispatcher yang melebihi 1 jam dari waktu produksi aktual (Time Start - Time End).")
             
-            fig_user = px.bar(
-                user_summary.head(15),
-                x='Total Input Entries',
-                y='User / Dispatcher',
-                orientation='h',
-                title="Top 15 Most Active Inputters",
-                color='Total Input Entries',
-                color_continuous_scale='Blues'
-            )
-            fig_user.update_layout(yaxis={'categoryorder': 'total ascending'})
-            st.plotly_chart(fig_user, use_container_width=True)
+            col_t1, col_t2 = st.columns(2)
+            col_t1.metric("Total Terlambat (>1 Jam)", f"{len(df_t_delay)} Record")
+            col_t2.metric("Total Time Entry Evaluated", f"{len(df_t_all)} Record")
+            
+            if len(df_t_delay) > 0:
+                st.dataframe(df_t_delay, use_container_width=True)
+            else:
+                st.info("🎉 Tidak ditemukan keterlambatan input user > 1 jam pada file ini.")
 
 else:
-    # State awal sebelum upload
-    st.info("👋 **BIMA MOCO Dashboard!**")
-    st.warning(" Silakan **unggah 2 file Excel harian** di sidebar sebelah kiri untuk mulai membaca data operasional site.")
-    
-    st.markdown("""
-    ### 📋 Petunjuk Unggah File:
-    1. **Summary Productivity (.xlsx):**
-       * Menampilkan **Unit No**, **Workgroup** (`OB` dan `COAL`), serta jam operasional (`HM`, `EWH`, `STB`, `BD`, `MOHH`).
-    2. **Input Time / Time Entry (.xlsx):**
-       * Menampilkan log aktivitas dan ketepatan waktu input dari Dispatcher/User.
-    """)
+    st.info("👋 Silakan unggah **kedua file Excel di sidebar kiri** untuk memulai audit Aturan 1 dan Aturan 2.")
