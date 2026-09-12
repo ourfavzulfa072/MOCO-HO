@@ -5,13 +5,13 @@ import pandas as pd
 # 1. PAGE CONFIGURATION
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="MOCO - Audit Control Room",
+    page_title="MOCO - HO ALL SITE",
     page_icon="⛏️",
     layout="wide"
 )
 
-st.title("⛏️ MOCO - Mining Operational Audit")
-st.caption("Audit Otomatis MOHH Anomaly & Latensi Input User (Khusus WORKGROUP OB & COAL)")
+st.title("⛏️ MOCO - Mining Operational")
+st.caption("MOHH Anomaly & Latensi Input User (OB & COAL)")
 
 # -----------------------------------------------------------------------------
 # 2. HELPER FUNCTIONS FOR EXCEL PARSING
@@ -71,8 +71,9 @@ def process_aturan_1_summary(file):
         
         # Filter Workgroup OB & COAL
         if "WORKGROUP" in df.columns:
-            df["WORKGROUP"] = df["WORKGROUP"].astype(str).str.strip().str.upper()
-            df = df[df["WORKGROUP"].isin(["OB", "COAL"])].copy()
+            df["WORKGROUP_STR"] = df["WORKGROUP"].astype(str).str.strip().str.upper()
+            df = df[df["WORKGROUP_STR"].str.contains("OB|COAL|OVERBURDEN", regex=True, na=False)].copy()
+            df = df.drop(columns=["WORKGROUP_STR"])
             
         # Pastikan kolom numerik untuk kalkulasi
         for num_col in ["EWH", "STB", "BD", "MOHH"]:
@@ -99,50 +100,49 @@ def process_aturan_1_summary(file):
 
 def process_aturan_2_input_time(file):
     """
-    Aturan 2: Membaca Input Time (Time Entry) berdasarkan Dev (hours) > 1
+    Aturan 2: Membaca Input Time (Time Entry)
+    - Otomatis mendeteksi baris header kolom (Input, user, Dev (hours), Dev (Hours text), Time Start, dll.)
+    - Menyaring data yang pada kolom Dev (Hours text) mengandung kata 'jam'
+    - Mengambil dan menyajikan SELURUH kolom dari baris yang terlambat tersebut (termasuk kolom Input/tanggal jam)
     """
     try:
-        df = pd.read_excel(file)
+        df_raw = pd.read_excel(file, header=None)
         
-        # Bersihkan nama kolom dari spasi berlebih
-        df.columns = [str(c).strip() for c in df.columns]
-        
-        # Identifikasi kolom yang relevan
-        dev_hrs_col = None
+        # Deteksi baris yang berisi header tabel aktual
+        header_row = 0
+        for idx, row in df_raw.head(15).iterrows():
+            row_str = [str(x).upper() for x in row.values if pd.notna(x)]
+            if any("DEV" in item or "INPUT" in item for item in row_str):
+                header_row = idx
+                break
+
+        # Baca ulang file Excel mulai dari baris header yang ditemukan
+        df = pd.read_excel(file, header=header_row)
+
+        # Rapikan nama kolom dari spasi liar/unnamed
+        df.columns = [str(c).strip() for c in df.columns if not str(c).startswith("Unnamed")]
+
+        # Identifikasi kolom Dev (Hours text)
         dev_txt_col = None
-        
         for c in df.columns:
-            c_upper = c.upper()
-            if "DEV" in c_upper and "TEXT" not in c_upper and "HOURS" in c_upper:
-                dev_hrs_col = c
-            elif "DEV" in c_upper and "TEXT" in c_upper:
+            if "DEV" in c.upper() and "TEXT" in c.upper():
                 dev_txt_col = c
-
-        # Filter Workgroup OB & COAL jika ada kolom WORKGROUP
-        wg_col = [c for c in df.columns if "WORKGROUP" in c.upper() or "MATERIAL" in c.upper()]
-        if wg_col:
-            df[wg_col[0]] = df[wg_col[0]].astype(str).str.strip().str.upper()
-            df = df[df[wg_col[0]].isin(["OB", "COAL"])].copy()
-
-        # Konversi nilai Dev (hours) ke angka numerik untuk filtering
-        if dev_hrs_col:
-            df["DEV_NUM"] = pd.to_numeric(df[dev_hrs_col], errors="coerce").fillna(0)
-        elif dev_txt_col:
-            df["DEV_NUM"] = df[dev_txt_col].astype(str).str.extract(r"(\d+)")[0].astype(float).fillna(0)
-        else:
-            df["DEV_NUM"] = 0
-
-        # Filter Anomali keterlambatan > 1.0 jam
-        df_delay = df[df["DEV_NUM"] > 1.0].copy()
+                break
         
-        # Urutkan berdasarkan keterlambatan terbesar
-        df_delay = df_delay.sort_values(by="DEV_NUM", ascending=False)
+        # Fallback jika kolom teks tidak terdeteksi eksplisit
+        if not dev_txt_col:
+            for c in df.columns:
+                if "DEV" in c.upper():
+                    dev_txt_col = c
+
+        if not dev_txt_col:
+            return None, None, "Kolom 'Dev (Hours text)' tidak ditemukan di dalam file Excel."
+
+        # FILTER UTAMA: Ambil baris yang kolom Dev (Hours text)-nya mengandung kata 'jam'
+        mask_delay = df[dev_txt_col].astype(str).str.lower().str.contains("jam", na=False)
         
-        # Drop kolom pembantu kalkulasi
-        if "DEV_NUM" in df_delay.columns:
-            df_delay = df_delay.drop(columns=["DEV_NUM"])
-        if "DEV_NUM" in df.columns:
-            df = df.drop(columns=["DEV_NUM"])
+        # Ambil seluruh baris yang terlambat beserta semua kolomnya (Input, user, Dev, Time Start, dst)
+        df_delay = df[mask_delay].copy()
 
         return df_delay, df, None
     except Exception as e:
@@ -187,7 +187,7 @@ if file_prod is not None and file_time is not None:
 
         with tab2:
             st.subheader("⏱️ Tabel User Keterlambatan Input (> 1 Jam)")
-            st.caption("Menampilkan log pengetikan user/dispatcher yang melebihi 1 jam dari waktu produksi aktual (Time Start - Time End).")
+            st.caption("Menampilkan log pengetikan user/dispatcher (termasuk tanggal & jam input) yang keterlambatannya memuat durasi jam.")
             
             col_t1, col_t2 = st.columns(2)
             col_t1.metric("Total Terlambat (>1 Jam)", f"{len(df_t_delay)} Record")
