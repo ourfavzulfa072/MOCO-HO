@@ -312,17 +312,15 @@ if file_prod is not None and file_time is not None:
                 st.info("Tidak ditemukan keterlambatan input user > 1 jam pada file ini.")
 
 else:
-    st.info("Silakan unggah **file Excel di sidebar kiri** untuk memulai.")
+    st.info("👋 Silakan unggah **file Excel di sidebar kiri** untuk memulai.")
     
     st.markdown("---")
     col_i1, col_i2 = st.columns(2)
     with col_i1:
         st.markdown("""
-        #### 🚨 Parameter MOHH)
+        #### 🚨 Parameter MOHH
+        """)
     with col_i2:
         st.markdown("""
-        ####  Parameter Audit Latensi Input
-        * **Filter Target:** Log entri waktu operasional.
-        * **Pencarian Kolom:** Membaca kolom `Dev (Hours text)`.
-        * **Kriteria Delay:** Memuat kata `"jam"` (terlambat $> 1$ jam).
+        #### ⏱️ Parameter Latensi Input
         """)
