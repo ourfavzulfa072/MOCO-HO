@@ -264,7 +264,7 @@ if file_prod is not None and file_time is not None:
 
         # TAB 2: KETERLAMBATAN INPUT USER
         with tab2:
-            st.subheader("Tabel Keterlambatan Input (> 1 Jam)")
+            st.subheader("Tabel Input (> 1 Jam)")
             st.caption("Menampilkan log input dispatcher/CCR")
             
             col_t1, col_t2, col_t3 = st.columns(3)
@@ -279,7 +279,7 @@ if file_prod is not None and file_time is not None:
             if len(df_t_delay) > 0:
                 cg3, cg4 = st.columns(2)
                 with cg3:
-                    st.markdown("##### 👤 Top User Terlambat Input")
+                    st.markdown("##### 👤 Top User Delay Input")
                     user_cols = [c for c in df_t_delay.columns if "USER" in str(c).upper()]
                     if user_cols:
                         top_users = df_t_delay[user_cols[0]].value_counts().head(5).reset_index()
@@ -290,7 +290,7 @@ if file_prod is not None and file_time is not None:
                         st.plotly_chart(fig_u, use_container_width=True)
                 
                 with cg4:
-                    st.markdown("##### ☀️ vs 🌙 Keterlambatan per Shift")
+                    st.markdown("##### Visual per Shift")
                     shift_cols = [c for c in df_t_delay.columns if "SHIFT" in str(c).upper()]
                     if shift_cols:
                         shift_cnt = df_t_delay[shift_cols[0]].value_counts().reset_index()
@@ -299,7 +299,7 @@ if file_prod is not None and file_time is not None:
                         fig_s.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=280)
                         st.plotly_chart(fig_s, use_container_width=True)
 
-            st.markdown("### Detail Data Keterlambatan")
+            st.markdown("### Detail Data Delay Input")
             if len(df_t_delay) > 0:
                 st.dataframe(df_t_delay, use_container_width=True)
                 st.download_button(
