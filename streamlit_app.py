@@ -11,7 +11,7 @@ st.set_page_config(
 )
 
 st.title("BIMA NUSA INT MOCO - Mining Operational")
-st.caption("Audit Otomatis MOHH Anomaly & Latensi Input User (Khusus WORKGROUP OB & COAL)")
+st.caption("MOHH Anomaly & Latensi Input User (OB & COAL)")
 
 # -----------------------------------------------------------------------------
 # 2. HELPER FUNCTIONS FOR EXCEL PARSING
