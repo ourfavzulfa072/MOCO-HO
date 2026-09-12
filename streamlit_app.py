@@ -265,7 +265,7 @@ if file_prod is not None and file_time is not None:
         # TAB 2: KETERLAMBATAN INPUT USER
         with tab2:
             st.subheader("Tabel Input (> 1 Jam)")
-            st.caption("Menampilkan log input dispatcher/CCR")
+            st.caption("Menampilkan log input dispatch / CCR")
             
             col_t1, col_t2, col_t3 = st.columns(3)
             col_t1.metric("Total Terlambat (>1 Jam)", f"{len(df_t_delay)} Record")
@@ -299,7 +299,7 @@ if file_prod is not None and file_time is not None:
                         fig_s.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=280)
                         st.plotly_chart(fig_s, use_container_width=True)
 
-            st.markdown("### Detail Data Delay Input")
+            st.markdown("### Detail Data Delay")
             if len(df_t_delay) > 0:
                 st.dataframe(df_t_delay, use_container_width=True)
                 st.download_button(
