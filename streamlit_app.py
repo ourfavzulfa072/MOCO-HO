@@ -6,7 +6,7 @@ import pandas as pd
 # -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="MOCO - Audit Control Room",
-    page_icon="⛏️",
+    page_icon="BIMA NUSA INT",
     layout="wide"
 )
 
