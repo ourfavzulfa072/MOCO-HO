@@ -168,8 +168,8 @@ def process_aturan_2_input_time(file):
 # 3. SIDEBAR UPLOAD
 # -----------------------------------------------------------------------------
 st.sidebar.header("📁 Upload Operational Files")
-file_prod = st.sidebar.file_uploader("1. Summary Productivity (.xlsx)", type=["xlsx", "xls"])
-file_time = st.sidebar.file_uploader("2. Input Time / Time Entry (.xlsx)", type=["xlsx", "xls"])
+file_prod = st.sidebar.file_uploader("Summary Productivity", type=["xlsx", "xls"])
+file_time = st.sidebar.file_uploader("Input Time / Time Entry", type=["xlsx", "xls"])
 
 # -----------------------------------------------------------------------------
 # 4. MAIN AUDIT DISPLAY
@@ -179,13 +179,13 @@ if file_prod is not None and file_time is not None:
     df_t_delay, df_t_all, err2 = process_aturan_2_input_time(file_time)
     
     if err1:
-        st.error(f"Error Aturan 1 (Summary Productivity): {err1}")
+        st.error(f"Error (Summary Productivity): {err1}")
     elif err2:
-        st.error(f"Error Aturan 2 (Input Time): {err2}")
+        st.error(f"Error (Input Time): {err2}")
     else:
-        st.success("✅ File Berhasil Diproses! Menampilkan Hasil Audit Aturan 1 & Aturan 2.")
+        st.success("✅ File Berhasil Diproses! Menampilkan Hasil...")
         
-        tab1, tab2 = st.tabs(["🚨 Aturan 1: Anomali MOHH (>24 Jam)", "⏱️ Aturan 2: Keterlambatan Input User (>1 Jam)"])
+        tab1, tab2 = st.tabs(["🚨 Anomali MOHH (>24 Jam)", "⏱️ Keterlambatan Input User"])
         
         with tab1:
             st.subheader("🚨 Tabel Anomali MOHH (> 24 Jam)")
@@ -201,8 +201,8 @@ if file_prod is not None and file_time is not None:
                 st.info("🎉 Tidak ditemukan anomali MOHH > 24 jam pada file ini.")
 
         with tab2:
-            st.subheader("⏱️ Tabel User Keterlambatan Input (> 1 Jam)")
-            st.caption("Menampilkan log pengetikan user/dispatcher (termasuk tanggal & jam input) yang keterlambatannya memuat durasi jam.")
+            st.subheader("⏱️ Tabel Keterlambatan Input (> 1 Jam)")
+            st.caption("Menampilkan log input dispatcher/CCR")
             
             col_t1, col_t2 = st.columns(2)
             col_t1.metric("Total Terlambat (>1 Jam)", f"{len(df_t_delay)} Record")
@@ -214,4 +214,4 @@ if file_prod is not None and file_time is not None:
                 st.info("🎉 Tidak ditemukan keterlambatan input user > 1 jam pada file ini.")
 
 else:
-    st.info("👋 Silakan unggah **kedua file Excel di sidebar kiri** untuk memulai audit Aturan 1 dan Aturan 2.")
+    st.info("👋 Silakan unggah **file Excel di sidebar kiri** untuk memulai.")
