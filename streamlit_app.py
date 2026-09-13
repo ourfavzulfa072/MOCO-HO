@@ -119,6 +119,7 @@ def process_aturan_2_input_time(file):
     """
     Aturan 2: Membaca Input Time (Time Entry)
     - Menangani header bertingkat
+    - Filter Workgroup OB & COAL
     - Format kolom Date agar tanpa jam
     - Menyaring data yang pada kolom Dev (Hours text) mengandung kata 'jam'
     """
@@ -141,7 +142,18 @@ def process_aturan_2_input_time(file):
         # Bersihkan nama kolom dari whitespace
         df.columns = [str(c).strip() for c in df.columns]
 
-        # 2. Format kolom Date agar bersih tanpa jam (00:00:00)
+        # 2. Filter Workgroup OB & COAL (Penambahan Baru)
+        wg_col = None
+        for c in df.columns:
+            if "WORKGROUP" in str(c).upper():
+                wg_col = c
+                break
+        
+        if wg_col:
+            mask_wg = df[wg_col].astype(str).str.strip().str.upper().str.contains("OB|COAL|OVERBURDEN", regex=True, na=False)
+            df = df[mask_wg].copy()
+
+        # 3. Format kolom Date agar bersih tanpa jam (00:00:00)
         date_col = None
         for c in df.columns:
             if "DATE" in str(c).upper() or "TANGGAL" in str(c).upper():
@@ -151,7 +163,7 @@ def process_aturan_2_input_time(file):
         if date_col:
             df[date_col] = pd.to_datetime(df[date_col], errors="coerce").dt.strftime("%Y-%m-%d")
 
-        # 3. Cari kolom 'Dev (Hours text)'
+        # 4. Cari kolom 'Dev (Hours text)'
         dev_txt_col = None
         for c in df.columns:
             c_upper = str(c).upper()
@@ -169,7 +181,7 @@ def process_aturan_2_input_time(file):
         if not dev_txt_col:
             return None, None, "Kolom 'Dev (Hours text)' tidak ditemukan di dalam file Excel."
 
-        # 4. Filter data yang mengandung kata 'jam'
+        # 5. Filter data yang mengandung kata 'jam'
         mask_delay = df[dev_txt_col].astype(str).str.lower().str.contains("jam", na=False)
         df_delay = df[mask_delay].copy()
 
