@@ -8,7 +8,7 @@ import os
 # 1. PAGE CONFIGURATION
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="MOCO - Audit Control Room",
+    page_title="MOCO - Data Validation 2026",
     page_icon="⛏️", 
     layout="wide"
 )
