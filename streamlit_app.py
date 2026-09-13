@@ -99,9 +99,8 @@ def process_aturan_1_summary(file):
             else:
                 df[num_col] = 0.0
 
-        # Hitung MOHH dan bulatkan ke 2 desimal
-        df["MOHH_CALC"] = (df["EWH"] + df["STB"] + df["BD"]).round(2)
-        df["MOHH"] = df.apply(lambda r: r["MOHH_CALC"] if r["MOHH"] == 0 else round(r["MOHH"], 2), axis=1)
+        # Hitung MOHH berdasarkan kalkulasi murni EWH + STB + BD
+        df["MOHH"] = (df["EWH"] + df["STB"] + df["BD"]).round(2)
         
         # Filter Anomali: Murni di atas 24 Jam
         df_anomali = df[df["MOHH"] > 24.001].copy()
@@ -110,7 +109,7 @@ def process_aturan_1_summary(file):
         target_cols = ["DATE", "SITE", "UNITNO", "WORKGROUP", "EWH", "STB", "BD", "MOHH", "USERNAMES DAY", "USERNAMES N"]
         existing_target = [c for c in target_cols if c in df_anomali.columns]
         
-        return df_anomali[existing_target], df[existing_target], None
+        return df_anomali[existing_target], df[[c for c in target_cols if c in df.columns]], None
     except Exception as e:
         return None, None, str(e)
 
@@ -142,7 +141,7 @@ def process_aturan_2_input_time(file):
         # Bersihkan nama kolom dari whitespace
         df.columns = [str(c).strip() for c in df.columns]
 
-        # 2. Filter Workgroup OB & COAL (Penambahan Baru)
+        # 2. Filter Workgroup OB & COAL
         wg_col = None
         for c in df.columns:
             if "WORKGROUP" in str(c).upper():
